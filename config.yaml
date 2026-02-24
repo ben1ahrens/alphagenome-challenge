@@ -1,0 +1,64 @@
+# ============================================================
+# config.yaml  –  AlphaGenome Serova Pipeline Configuration
+# ============================================================
+
+# --- Input files --------------------------------------------
+data:
+  vcf_gz: "data/raw/VCF_File.gz"              # TCGA-LUAD somatic VCF (tar.gz)
+  rna_xlsx: "data/raw/Example_RNA.xlsx"        # TCGA RNA-seq expression
+  reference_fasta: "data/reference/hg38.fa"   # hg38 reference (optional for API mode)
+
+# --- Output -------------------------------------------------
+output:
+  results_dir: "results"
+  figures_dir: "results/figures"
+
+# --- VCF Parsing --------------------------------------------
+vcf:
+  patient_id: "TCGA-05-4384"
+  vcf_inner_path: "ff1df4a9-2318-4dba-8f34-cb69dde4360c/TCGA_LUAD.f368273c-bd2d-4b97-97ec-a04cb130af1e.wgs.GATK4_MuTect2_Pair.somatic_annotation.vcf.gz"
+  filter_pass_only: true          # only PASS variants
+  max_indel_length: 50            # skip very long indels (AlphaGenome handles SNVs best)
+  vep_csq_field: "CSQ"           # VEP annotation field name
+  genome_build: "GRCh38"
+
+# --- AlphaGenome API ----------------------------------------
+alphagenome:
+  organism: "human"
+  sequence_length: "1MB"          # 1MB context window around each variant
+  tissue_uberon: "UBERON:0002048" # lung
+  scorers:
+    rna_seq: true                 # primary: predicted RNA-seq coverage change
+    cage: true                    # transcription initiation proxy
+    atac: true                    # chromatin accessibility
+  rate_limit_sleep_s: 1.0        # seconds between API calls (be polite)
+  max_retries: 3
+  save_raw_outputs: true          # cache raw API responses to disk
+
+# --- Gene-level Aggregation ---------------------------------
+aggregation:
+  # How to collapse multiple variants per gene into one score
+  # Options: "min" (most negative = most suppressive),
+  #          "mean", "max_abs" (largest absolute change)
+  method: "min"
+  # Which scorer to use as the primary expression-change signal
+  primary_scorer: "rna_seq"
+
+# --- Expression Comparison ----------------------------------
+comparison:
+  tpm_column: "tpm_unstranded"
+  expressed_threshold: 1.0        # TPM threshold for "expressed" genes
+  log_transform_tpm: true         # use log2(TPM + 1) for correlations
+  min_base_tpm: 0.0               # genes below this TPM are excluded from analysis
+
+# --- GTEx Contextualisation ---------------------------------
+gtex:
+  tissue: "Lung"
+  gtex_api_base: "https://gtexportal.org/api/v2"
+  cancer_tissue: "Lung Adenocarcinoma"   # for TCGA comparison if available
+  top_n_genes: 50                        # show top-N genes in GTEx comparison
+
+# --- Logging ------------------------------------------------
+logging:
+  level: "INFO"
+  log_file: "results/pipeline.log"
