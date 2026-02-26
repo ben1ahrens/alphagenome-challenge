@@ -1,6 +1,6 @@
 # AlphaGenome Variant-Expression Pipeline
 
-**Serova Tech Challenge · Benjamin Ahrens**
+**AlphaGenome Tech Challenge · Benjamin Ahrens**
 
 This pipeline uses [AlphaGenome](https://github.com/google-deepmind/alphagenome) to predict the regulatory impact of cancer-associated somatic variants on gene expression, and compares these predictions against observed RNA-seq data from the same TCGA-LUAD patient sample.
 
