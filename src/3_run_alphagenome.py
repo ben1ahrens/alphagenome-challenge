@@ -53,7 +53,7 @@ from utils import (
     setup_logging, ensure_dir, retry_with_backoff,
 )
 
-CHECKPOINT_EVERY = 100  # Save progress every N variants
+CHECKPOINT_EVERY = 50  # Save progress every N variants
 
 
 # ------------------------------------------------------------------ #
@@ -64,8 +64,8 @@ CHECKPOINT_EVERY = 100  # Save progress every N variants
 def _import_alphagenome():
     try:
         from alphagenome.data import genome as ag_genome
-        from alphagenome.models import dna_client, variant_scorers
-        return ag_genome, dna_client, variant_scorers
+        from alphagenome.models import dna_client, variant_scorers, dna_model
+        return ag_genome, dna_client, variant_scorers, dna_model
     except ImportError as e:
         raise ImportError(
             "AlphaGenome SDK not found. Install it with:\n"
@@ -79,20 +79,19 @@ def _import_alphagenome():
 # Scorer factory                                                       #
 # ------------------------------------------------------------------ #
 
-def _build_scorers(scorer_cfg: dict, variant_scorers_mod) -> list:
+def _build_scorers(scorer_cfg: dict, variant_scorers_mod, organism: str = "human") -> list:
     """Build the list of AlphaGenome variant scorer objects from config."""
     vs = variant_scorers_mod
-    selected = []
-    if scorer_cfg.get("rna_seq", True):
-        selected.append(vs.RNASeqScorer())
-    if scorer_cfg.get("cage", True):
-        selected.append(vs.CAGEScorer())
-    if scorer_cfg.get("atac", True):
-        selected.append(vs.ATACScorer())
-    if not selected:
-        raise ValueError("No scorers selected in config.alphagenome.scorers")
-    logger.info(f"Using scorers: {[type(s).__name__ for s in selected]}")
-    return selected
+
+    # Select the scorers most relevant to expression prediction
+    # RNA_SEQ: gene-level log fold change (primary expression signal)
+    # RNA_SEQ_ACTIVE: whether gene is actively transcribed
+    # CAGE: transcription initiation proxy
+    # ATAC: chromatin accessibility
+    keys = ["RNA_SEQ", "RNA_SEQ_ACTIVE", "CAGE", "ATAC"]
+    scorers = [vs.RECOMMENDED_VARIANT_SCORERS[k] for k in keys]
+    logger.info(f"Using scorers: {keys}")
+    return scorers
 
 
 # ------------------------------------------------------------------ #
@@ -130,15 +129,16 @@ def run(config: dict) -> pd.DataFrame:
     checkpoint_path = results_dir / "_checkpoint_alphagenome.parquet"
 
     ag_cfg = config["alphagenome"]
-    organism = ag_cfg["organism"]
     seq_len_key = f"SEQUENCE_LENGTH_{ag_cfg['sequence_length']}"
-    tissue = ag_cfg["tissue_uberon"]
     sleep_s = ag_cfg["rate_limit_sleep_s"]
     max_retries = ag_cfg["max_retries"]
 
+    # Load AlphaGenome first so dna_model is available before use
+    ag_genome, dna_client, variant_scorers, dna_model = _import_alphagenome()
+    organism = dna_model.Organism.HOMO_SAPIENS
+
     # Load variants
     vcf_df = load_parquet(results_dir / "vcf_parsed.parquet")
-    # Deduplicate: score each unique variant once
     variants_to_score = (
         vcf_df[["variant_id", "chrom", "pos", "ref", "alt"]]
         .drop_duplicates("variant_id")
@@ -146,12 +146,10 @@ def run(config: dict) -> pd.DataFrame:
     )
     logger.info(f"Variants to score: {len(variants_to_score):,}")
 
-    # Load AlphaGenome
-    ag_genome, dna_client, variant_scorers = _import_alphagenome()
     api_key = get_api_key(config)
     model = dna_client.create(api_key)
     sequence_length = dna_client.SUPPORTED_SEQUENCE_LENGTHS[seq_len_key]
-    scorers = _build_scorers(ag_cfg["scorers"], variant_scorers)
+    scorers = _build_scorers(ag_cfg["scorers"], variant_scorers, organism)
 
     # Resume from checkpoint
     already_done = _load_checkpoint(checkpoint_path)
@@ -170,7 +168,6 @@ def run(config: dict) -> pd.DataFrame:
 
         logger.debug(f"[{i}/{len(pending)}] Scoring {variant_id}")
 
-        # Build AlphaGenome objects
         variant = ag_genome.Variant(
             chromosome=chrom,
             position=pos,
@@ -180,7 +177,6 @@ def run(config: dict) -> pd.DataFrame:
         )
         interval = variant.reference_interval.resize(sequence_length)
 
-        # Score with retry/backoff
         def _score():
             return model.score_variant(
                 interval=interval,
@@ -193,7 +189,6 @@ def run(config: dict) -> pd.DataFrame:
             scores = retry_with_backoff(_score, max_retries=max_retries, sleep_s=sleep_s)
         except Exception as exc:
             logger.error(f"Failed to score {variant_id}: {exc}")
-            # Record failure so we can inspect later
             buffer.append({
                 "variant_id": variant_id,
                 "chrom": chrom,
@@ -207,27 +202,24 @@ def run(config: dict) -> pd.DataFrame:
             })
             continue
 
-        # Flatten tidy scores into rows
         tidy = variant_scorers.tidy_scores([scores])
         tidy["variant_id"] = variant_id
+        if "scored_interval" in tidy.columns:
+            tidy["scored_interval"] = tidy["scored_interval"].astype(str)
         buffer.extend(tidy.to_dict(orient="records"))
 
-        # Rate limit
         time.sleep(sleep_s)
 
-        # Checkpoint
         if i % CHECKPOINT_EVERY == 0:
             _append_checkpoint(checkpoint_path, buffer)
             all_rows.extend(buffer)
             buffer = []
             logger.info(f"  Checkpoint saved ({i}/{len(pending)} variants done)")
 
-    # Save remaining buffer
     if buffer:
         _append_checkpoint(checkpoint_path, buffer)
         all_rows.extend(buffer)
 
-    # Combine with previously scored (from checkpoint)
     if checkpoint_path.exists():
         df_scores = pd.read_parquet(checkpoint_path)
     else:

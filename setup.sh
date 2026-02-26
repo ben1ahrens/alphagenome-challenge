@@ -6,33 +6,33 @@
 # ==============================================================
 set -euo pipefail
 
-ENV_NAME="alphagenome-serova"
-PYTHON_VERSION="3.11"
+ENV_NAME="alphagenome-env"
+PYTHON_VERSION="3.12"
 
 echo "============================================="
 echo " AlphaGenome Serova – Environment Setup"
 echo "============================================="
 
-# ---- Check for conda ----------------------------------------
-if ! command -v conda &>/dev/null; then
-    echo "ERROR: conda not found. Please install Miniconda or Anaconda first."
-    echo "  https://docs.conda.io/en/latest/miniconda.html"
+# ---- Check for micromamba ----------------------------------------
+if ! command -v micromamba &>/dev/null; then
+    echo "ERROR: micromamba not found. Please install micromamba first."
+    
     exit 1
 fi
 
 # ---- Create / update conda env ------------------------------
-if conda env list | grep -q "^${ENV_NAME}"; then
-    echo "[1/5] Conda environment '${ENV_NAME}' already exists – updating..."
-    conda env update --name "${ENV_NAME}" --file environment.yml --prune
+if micromamba env list | grep -q "${ENV_NAME}"; then
+    echo "[1/5] Environment '${ENV_NAME}' already exists – updating..."
+    micromamba update --name "${ENV_NAME}" --file environment.yml -y
 else
-    echo "[1/5] Creating conda environment '${ENV_NAME}' (Python ${PYTHON_VERSION})..."
-    conda env create --name "${ENV_NAME}" --file environment.yml
+    echo "[1/5] Creating environment '${ENV_NAME}' (Python ${PYTHON_VERSION})..."
+    micromamba env create --name "${ENV_NAME}" --file environment.yml -y
 fi
 
 # ---- Activate env (source for script context) ---------------
 # shellcheck disable=SC1091
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate "${ENV_NAME}"
+eval "$(micromamba shell hook --shell bash)"
+micromamba activate "${ENV_NAME}"
 
 echo "[2/5] Installing pip dependencies from requirements.txt..."
 pip install -r requirements.txt --quiet
