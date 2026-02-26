@@ -2,7 +2,7 @@
 
 **Serova Tech Challenge · Benjamin Ahrens**
 
-This pipeline uses [AlphaGenome](https://github.com/google-deepmind/alphagenome) (Google DeepMind) to predict the regulatory impact of cancer-associated somatic variants on gene expression, and compares these predictions against observed RNA-seq data from the same TCGA-LUAD patient sample.
+This pipeline uses [AlphaGenome](https://github.com/google-deepmind/alphagenome) to predict the regulatory impact of cancer-associated somatic variants on gene expression, and compares these predictions against observed RNA-seq data from the same TCGA-LUAD patient sample.
 
 ---
 
@@ -18,7 +18,7 @@ AlphaGenome takes 1 Mb of DNA sequence and predicts thousands of functional geno
 
 | File | Description |
 |------|-------------|
-| `VCF_File.gz` | TCGA-LUAD somatic variants (GRCh38, MuTect2), patient TCGA-05-4384, ~3,970 PASS calls |
+| `VCF_File.gz` | TCGA-LUAD somatic variants (GRCh38, MuTect2), patient TCGA-05-4384, ~2,774 PASS calls |
 | `Example_RNA.xlsx` | TCGA RNA-seq expression (GENCODE v36): TPM, FPKM per gene |
 
 The VCF file is VEP-annotated (CSQ field) and contains Ensembl gene IDs, enabling direct linkage to the RNA expression file.
@@ -67,10 +67,10 @@ VCF (somatic variants)          RNA expression (TPM)
 ### 1. Clone & install
 
 ```bash
-git clone https://github.com/<your-handle>/alphagenome-serova.git
+git clone https://github.com/<your_handle>/alphagenome-serova.git
 cd alphagenome-serova
-bash setup.sh          # creates conda env and installs all dependencies
-conda activate alphagenome-serova
+bash setup.sh          # creates micromamba env and installs all dependencies
+micromamba activate alphagenome-env
 ```
 
 ### 2. Configure API key
@@ -108,7 +108,7 @@ Or step-by-step:
 ```bash
 python src/1_parse_vcf.py
 python src/2_load_rna.py
-python src/3_run_alphagenome.py   # requires API key; ~2–3 hrs for 3,970 variants
+python src/3_run_alphagenome.py   # requires API key
 python src/4_aggregate_scores.py
 python src/5_compare_expression.py
 python src/6_gtex_context.py
@@ -161,9 +161,9 @@ Results are written to `results/`.
 ```
 alphagenome-serova/
 ├── README.md
-├── setup.sh                    # conda env + pip install
+├── setup.sh                    # micromamba env + pip install
 ├── requirements.txt            # Python dependencies
-├── environment.yml             # conda environment file
+├── environment.yml             # micromamba environment file
 ├── config.yaml                 # pipeline configuration
 ├── .env.example                # API key template
 ├── data/
